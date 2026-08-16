@@ -5,7 +5,7 @@ import cssWorker from 'monaco-editor/esm/vs/language/css/css.worker?worker';
 import htmlWorker from 'monaco-editor/esm/vs/language/html/html.worker?worker';
 import tsWorker from 'monaco-editor/esm/vs/language/typescript/ts.worker?worker';
 import { StorageService } from '../core/StorageService';
-import { EventBus } from '../core/EventBus';
+import { EventBus, EVENTS } from '../core/EventBus';
 
 // Monaco environment for workers
 self.MonacoEnvironment = {
@@ -52,7 +52,8 @@ export class EditorService {
       this.saveDebounceTimer = window.setTimeout(async () => {
         try {
           await StorageService.saveFile(this.currentFilename, content);
-          EventBus.publish('FILE_CHANGED', {
+          // FIX: use emit instead of publish
+          EventBus.getInstance().emit(EVENTS.FILE_CHANGED, {
             filename: this.currentFilename,
             content
           });
@@ -76,7 +77,10 @@ export class EditorService {
 
     const model = this.editor.getModel();
     if (model) {
-      monaco.editor.setModelLanguage(model, language === 'c' ? 'c' : language === 'shell' ? 'shell' : 'plaintext');
+      monaco.editor.setModelLanguage(
+        model,
+        language === 'c' ? 'c' : language === 'shell' ? 'shell' : 'plaintext'
+      );
     }
     this.editor.setValue(code);
     this.editor.focus();
