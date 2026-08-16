@@ -1,0 +1,17 @@
+{
+  "name": "LinuxLab — Interactive OS Platform",
+  "short_name": "LinuxLab",
+  "description": "Interactive Linux & Operating Systems learning platform with live terminal and labs",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#1e1e1e",
+  "theme_color": "#0e639c",
+  "orientation": "any",
+  "icons": [
+    {
+      "src": "/favicon.ico",
+      "sizes": "48x48",
+      "type": "image/x-icon"
+    }
+  ]
+}

@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>LinuxLab — Web Simulator & Automated Assessment Lab</title>
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body>
+    <div id="app">
+      <header class="app-header">
+        <div class="logo-group">
+          <span style="font-size: 1.3rem;">⚡</span>
+          <span class="logo-title">LinuxLab <span class="badge">Web POSIX Simulator</span></span>
+        </div>
+        <div class="header-actions">
+          <button id="btn-run-tests" class="action-btn test-btn">⚡ Run Assertions</button>
+          <button id="btn-reset" class="action-btn">↺ Reset Environment</button>
+          <a href="./index.html" class="action-btn" style="text-decoration: none;">🏠 Exit to Home</a>
+        </div>
+      </header>
+
+      <main class="workspace-container">
+        <!-- Left Editor Pane -->
+        <section class="editor-pane">
+          <div class="pane-header">
+            <div class="file-tabs">
+              <button id="tab-main-c" class="file-tab active">main.c</button>
+              <button id="tab-main-java" class="file-tab">Main.java</button>
+            </div>
+            <button id="btn-save-fs" class="btn-save">Save Virtual FS (Ctrl+S)</button>
+          </div>
+          
+          <div id="monaco-container"></div>
+
+          <div id="test-feedback-panel" class="test-feedback">
+            <div class="test-header">Automated Assessment Telemetry (Sub-millisecond Feedback)</div>
+            <div id="test-output-list">Click "Run Assertions" to evaluate code against grading test-cases.</div>
+          </div>
+        </section>
+
+        <!-- Right Terminal Pane -->
+        <section class="terminal-pane">
+          <div class="pane-header">
+            <span id="active-terminal-title" class="terminal-status">Shell: Web Simulator (In-Memory POSIX)</span>
+            <span class="terminal-hint">Try: gcc main.c -o table && ./table</span>
+          </div>
+          <div id="simulator-terminal-container" class="terminal-viewport"></div>
+        </section>
+      </main>
+    </div>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
