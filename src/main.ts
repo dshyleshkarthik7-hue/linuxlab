@@ -2,228 +2,37 @@ import * as xtermModule from '@xterm/xterm';
 import * as fitModule from '@xterm/addon-fit';
 import '@xterm/xterm/css/xterm.css';
 import * as monaco from 'monaco-editor';
-
-// Vite worker imports for Monaco Editor
 import editorWorker from 'monaco-editor/esm/vs/editor/editor.worker?worker';
 import jsonWorker from 'monaco-editor/esm/vs/language/json/json.worker?worker';
 import cssWorker from 'monaco-editor/esm/vs/language/css/css.worker?worker';
 import htmlWorker from 'monaco-editor/esm/vs/language/html/html.worker?worker';
 import tsWorker from 'monaco-editor/esm/vs/language/typescript/ts.worker?worker';
-
-// Define the global Monaco environment to resolve workers
-(self as any).MonacoEnvironment = {
-  getWorker(_: any, label: string) {
-    if (label === 'json') return new jsonWorker();
-    if (label === 'css' || label === 'scss' || label === 'less') return new cssWorker();
-    if (label === 'html' || label === 'handlebars' || label === 'razor') return new htmlWorker();
-    if (label === 'typescript' || label === 'javascript') return new tsWorker();
-    return new editorWorker();
-  },
-};
-
 import { InBrowserLinuxEngine } from './engine/LinuxEngine';
-import { AssessmentRunner } from './engine/AssessmentRunner';
+import { AssessmentRunner, type AssessmentResult } from './engine/AssessmentRunner';
+import { StorageService } from './core/StorageService';
+import { WorkspacePersistence } from './core/WorkspacePersistence';
 
-const TerminalConstructor = (xtermModule as any).Terminal || (xtermModule as any).default?.Terminal || (xtermModule as any).default || xtermModule;
-const FitAddonConstructor = (fitModule as any).FitAddon || (fitModule as any).default?.FitAddon || (fitModule as any).default || fitModule;
+(self as any).MonacoEnvironment={getWorker(_:any,label:string){if(label==='json')return new jsonWorker();if(label==='css'||label==='scss'||label==='less')return new cssWorker();if(label==='html'||label==='handlebars'||label==='razor')return new htmlWorker();if(label==='typescript'||label==='javascript')return new tsWorker();return new editorWorker();}};
+const TerminalConstructor=(xtermModule as any).Terminal||(xtermModule as any).default?.Terminal||(xtermModule as any).default||xtermModule;
+const FitAddonConstructor=(fitModule as any).FitAddon||(fitModule as any).default?.FitAddon||(fitModule as any).default||fitModule;
 
 class LinuxLabApp {
-  private engine: InBrowserLinuxEngine;
-  private assessment: AssessmentRunner;
-  private editor: monaco.editor.IStandaloneCodeEditor | null = null;
-  private simTerm: any;
-  private simFitAddon: any;
-
-  private currentFile: string = 'main.c';
-  private currentInputBuffer: string = '';
-
-  constructor() {
-    this.engine = new InBrowserLinuxEngine();
-    this.assessment = new AssessmentRunner(this.engine);
-
-    requestAnimationFrame(() => {
-      this.initSimulatorTerminal();
-      this.initMonaco();
-      this.bindEvents();
-    });
-  }
-
-  private initMonaco(): void {
-    const container = document.getElementById('monaco-container');
-    if (!container) return;
-
-    const initialCode = this.engine.readFile('/root/main.c') || '';
-
-    this.editor = monaco.editor.create(container, {
-      value: initialCode,
-      language: 'c',
-      theme: 'vs-dark',
-      automaticLayout: true,
-      fontSize: 14,
-      fontFamily: '"Cascadia Code", "Fira Code", monospace',
-      minimap: { enabled: false },
-      scrollBeyondLastLine: false,
-    });
-
-    this.engine.setEditorHook((filename: string, content: string) => {
-      this.switchFileTab(filename, content);
-    });
-
-    setTimeout(() => {
-      this.editor?.layout();
-    }, 200);
-  }
-
-  private initSimulatorTerminal(): void {
-    const container = document.getElementById('simulator-terminal-container');
-    if (!container) return;
-
-    this.simTerm = new TerminalConstructor({
-      cursorBlink: true,
-      fontSize: 14,
-      fontFamily: '"Cascadia Code", "Fira Code", "Courier New", monospace',
-      theme: {
-        background: '#020617',
-        foreground: '#e2e8f0',
-        cursor: '#38bdf8',
-        selectionBackground: '#1e3a8a',
-      },
-      convertEol: true,
-      rows: 24,
-      cols: 80,
-    });
-
-    this.simFitAddon = new FitAddonConstructor();
-    this.simTerm.loadAddon(this.simFitAddon);
-    this.simTerm.open(container);
-
-    setTimeout(() => {
-      try {
-        this.simFitAddon.fit();
-      } catch (e) {}
-    }, 150);
-
-    this.simTerm.writeln('\x1b[1;36m====================================================\x1b[0m');
-    this.simTerm.writeln('\x1b[1;32m   LinuxLab Engine A: Interactive Web Shell & POSIX  \x1b[0m');
-    this.simTerm.writeln('\x1b[1;36m====================================================\x1b[0m');
-    this.simTerm.writeln('Try: \x1b[33mgcc main.c -o table && ./table\x1b[0m | \x1b[33mping google.com\x1b[0m | \x1b[33mtop\x1b[0m\r\n');
-    this.simTerm.write(this.engine.getPrompt());
-
-    this.simTerm.onData((data: string) => {
-      this.handleInput(data);
-    });
-  }
-
-  private handleInput(data: string): void {
-    if (data === '\r') {
-      this.simTerm.writeln('');
-      const cmd = this.currentInputBuffer;
-      this.currentInputBuffer = '';
-
-      if (cmd.trim().length > 0) {
-        this.engine.execute(cmd).then((output) => {
-          if (output) {
-            this.simTerm.writeln(output);
-          }
-          this.simTerm.write(this.engine.getPrompt());
-        });
-      } else {
-        this.simTerm.write(this.engine.getPrompt());
-      }
-      return;
-    }
-
-    if (data === '\u007F' || data === '\b') {
-      if (this.currentInputBuffer.length > 0) {
-        this.currentInputBuffer = this.currentInputBuffer.slice(0, -1);
-        this.simTerm.write('\b \b');
-      }
-      return;
-    }
-
-    if (data >= ' ' || data === '\t') {
-      this.currentInputBuffer += data;
-      this.simTerm.write(data);
-    }
-  }
-
-  private switchFileTab(filename: string, forcedContent?: string): void {
-    this.currentFile = filename;
-    const content = forcedContent ?? this.engine.readFile(`/root/${filename}`) ?? '';
-    const lang = filename.endsWith('.java') ? 'java' : 'c';
-
-    if (this.editor) {
-      const model = this.editor.getModel();
-      if (model) {
-        monaco.editor.setModelLanguage(model, lang);
-      }
-      this.editor.setValue(content);
-    }
-
-    document.querySelectorAll('.file-tab').forEach((tab) => tab.classList.remove('active'));
-    if (filename === 'main.c') document.getElementById('tab-main-c')?.classList.add('active');
-    if (filename === 'Main.java') document.getElementById('tab-main-java')?.classList.add('active');
-  }
-
-  private saveCurrentEditorToFS(): void {
-    if (!this.editor) return;
-    const val = this.editor.getValue();
-    this.engine.writeFile(`/root/${this.currentFile}`, val);
-
-    const feedback = document.getElementById('test-output-list');
-    if (feedback) {
-      feedback.innerHTML = `<span style="color: #4ade80;">✓ Saved '/root/${this.currentFile}' to Virtual File System.</span>`;
-    }
-  }
-
-  private runAutomatedGrading(): void {
-    if (!this.editor) return;
-    this.saveCurrentEditorToFS();
-    const code = this.editor.getValue();
-    const feedbackList = document.getElementById('test-output-list');
-    if (!feedbackList) return;
-
-    let res;
-    if (this.currentFile.endsWith('.java')) {
-      res = this.assessment.runJavaTestSuite(code);
-    } else {
-      res = this.assessment.runCTestSuite(code);
-    }
-
-    feedbackList.innerHTML = res.logs.join('');
-  }
-
-  private bindEvents(): void {
-    document.getElementById('tab-main-c')?.addEventListener('click', () => this.switchFileTab('main.c'));
-    document.getElementById('tab-main-java')?.addEventListener('click', () => this.switchFileTab('Main.java'));
-    document.getElementById('btn-save-fs')?.addEventListener('click', () => this.saveCurrentEditorToFS());
-    document.getElementById('btn-run-tests')?.addEventListener('click', () => this.runAutomatedGrading());
-
-    document.getElementById('btn-reset')?.addEventListener('click', () => {
-      this.engine = new InBrowserLinuxEngine();
-      this.assessment = new AssessmentRunner(this.engine);
-      this.switchFileTab('main.c');
-      this.simTerm.clear();
-      this.simTerm.writeln('\x1b[33m[Virtual Environment Reset Complete]\x1b[0m\r\n');
-      this.simTerm.write(this.engine.getPrompt());
-    });
-
-    window.addEventListener('keydown', (e) => {
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
-        e.preventDefault();
-        this.saveCurrentEditorToFS();
-      }
-    });
-
-    window.addEventListener('resize', () => {
-      this.editor?.layout();
-      try {
-        this.simFitAddon?.fit();
-      } catch (e) {}
-    });
-  }
+ private engine=new InBrowserLinuxEngine(); private assessment=new AssessmentRunner(this.engine); private editor:monaco.editor.IStandaloneCodeEditor|null=null; private simTerm:any; private simFitAddon:any;
+ private currentFile='main.c'; private input=''; private history:string[]=[]; private historyIndex=-1; private cursor=0; private restoring=false;
+ constructor(){requestAnimationFrame(async()=>{this.initSimulatorTerminal();this.initMonaco();this.bindEvents();await this.restoreWorkspace();});}
+ private async restoreWorkspace(){this.restoring=true;try{const state=await WorkspacePersistence.load();if(state){WorkspacePersistence.restore(this.engine,state);this.currentFile=state.currentFile||'main.c';this.history=[...this.engine.history].slice(-100);this.historyIndex=-1;this.switchFileTab(this.currentFile);const saved=await StorageService.getProgress(this.currentFile.endsWith('.java')?'default-java':'default-c');if(saved)this.renderAssessmentProgress(saved);}}catch(e){console.warn('Workspace restore failed',e);}finally{this.restoring=false;this.refreshPrompt();}}
+ private async persist(assessment?:AssessmentResult){if(this.restoring)return;try{await WorkspacePersistence.save(this.engine,this.currentFile,assessment?{status:assessment.status,passed:assessment.passed,total:assessment.total,logs:assessment.logs}:undefined);}catch(e){console.warn('Workspace persistence failed',e);}}
+ private initMonaco(){const container=document.getElementById('monaco-container');if(!container)return;this.editor=monaco.editor.create(container,{value:this.engine.readFile('/root/main.c')||'',language:'c',theme:'vs-dark',automaticLayout:true,fontSize:14,fontFamily:'"Cascadia Code", "Fira Code", monospace',minimap:{enabled:false},scrollBeyondLastLine:false});this.editor.onDidChangeModelContent(()=>{if(this.restoring)return;this.engine.writeFile(`/root/${this.currentFile}`,this.editor!.getValue());void this.persist();});this.engine.setEditorHook((filename,content)=>this.switchFileTab(filename,content));setTimeout(()=>this.editor?.layout(),200);}
+ private initSimulatorTerminal(){const container=document.getElementById('simulator-terminal-container');if(!container)return;this.simTerm=new TerminalConstructor({cursorBlink:true,fontSize:14,fontFamily:'"Cascadia Code", "Fira Code", "Courier New", monospace',convertEol:true,rows:24,cols:80});this.simFitAddon=new FitAddonConstructor();this.simTerm.loadAddon(this.simFitAddon);this.simTerm.open(container);requestAnimationFrame(()=>{try{this.simFitAddon.fit();}catch{}});this.simTerm.writeln('\x1b[1;36m====================================================\x1b[0m');this.simTerm.writeln('\x1b[1;32m   LinuxLab Engine A: Interactive Web Shell & POSIX  \x1b[0m');this.simTerm.writeln('\x1b[1;36m====================================================\x1b[0m');this.simTerm.writeln('Try: \x1b[33mgcc main.c -o table && ./table\x1b[0m | \x1b[33mping google.com\x1b[0m | \x1b[33mhtop\x1b[0m\r\n');this.refreshPrompt();this.simTerm.onData((data:string)=>this.handleInput(data));}
+ private refreshPrompt(){if(this.simTerm)this.simTerm.write(this.engine.getPrompt());}
+ private redrawInput(){this.simTerm.write('\x1b[2K\r'+this.engine.getPrompt()+this.input);const move=this.input.length-this.cursor;if(move>0)this.simTerm.write(`\x1b[${move}D`);}
+ private async submit(){this.simTerm.write('\r\n');const cmd=this.input;this.input='';this.cursor=0;this.historyIndex=-1;if(cmd.trim()){this.history=this.history.filter(x=>x!==cmd.trim());this.history.unshift(cmd.trim());this.history=this.history.slice(0,100);const result=await this.engine.executeResult(cmd);if(result.stdout)this.simTerm.writeln(result.stdout);if(result.stderr)this.simTerm.writeln(`\x1b[31m${result.stderr}\x1b[0m`);await this.persist();}this.refreshPrompt();}
+ private handleInput(data:string){if(data==='\r'){void this.submit();return;}if(data==='\x1b[A'){if(this.history.length){this.historyIndex=Math.min(this.historyIndex+1,this.history.length-1);this.input=this.history[this.historyIndex];this.cursor=this.input.length;this.redrawInput();}return;}if(data==='\x1b[B'){if(this.historyIndex>0){this.historyIndex--;this.input=this.history[this.historyIndex];}else{this.historyIndex=-1;this.input='';}this.cursor=this.input.length;this.redrawInput();return;}if(data==='\x01'){this.cursor=0;this.redrawInput();return;}if(data==='\x05'){this.cursor=this.input.length;this.redrawInput();return;}if(data==='\x7f'||data==='\b'){if(this.cursor>0){this.input=this.input.slice(0,this.cursor-1)+this.input.slice(this.cursor);this.cursor--;this.redrawInput();}return;}if(data==='_'){}if(data.length===1&&data>=' '){this.input=this.input.slice(0,this.cursor)+data+this.input.slice(this.cursor);this.cursor++;this.simTerm.write(data);return;}if(data==='\x1b[D'&&this.cursor>0){this.cursor--;this.simTerm.write('\x1b[D');return;}if(data==='\x1b[C'&&this.cursor<this.input.length){this.cursor++;this.simTerm.write('\x1b[C');return;}}
+ private switchFileTab(filename:string,forcedContent?:string){this.currentFile=filename;const content=forcedContent??this.engine.readFile(`/root/${filename}`)??'';if(this.editor){const model=this.editor.getModel();if(model)monaco.editor.setModelLanguage(model,filename.endsWith('.java')?'java':'c');if(this.editor.getValue()!==content)this.editor.setValue(content);}document.querySelectorAll('.file-tab').forEach(t=>t.classList.remove('active'));if(filename==='main.c')document.getElementById('tab-main-c')?.classList.add('active');if(filename==='Main.java')document.getElementById('tab-main-java')?.classList.add('active');void this.persist();}
+ private async saveCurrentEditorToFS(){if(!this.editor)return;this.engine.writeFile(`/root/${this.currentFile}`,this.editor.getValue());await this.persist();const feedback=document.getElementById('test-output-list');if(feedback)feedback.innerHTML=`<span style="color:#4ade80">✓ Saved '/root/${this.currentFile}' and persisted workspace.</span>`;}
+ private renderAssessmentProgress(p:{score:number;passed:boolean;status?:string;logs?:string[]}){const el=document.getElementById('test-output-list');if(!el)return;el.innerHTML=(p.logs?.length?p.logs.join(''):`Restored assessment: ${p.score} verified tests — ${p.status|| (p.passed?'passed':'failed')}.`);}
+ private async runAutomatedGrading(){if(!this.editor)return;await this.saveCurrentEditorToFS();const res=this.currentFile.endsWith('.java')?this.assessment.runJavaTestSuite(this.editor.getValue()):this.assessment.runCTestSuite(this.editor.getValue());const el=document.getElementById('test-output-list');if(el)el.innerHTML=res.logs.join('');await this.persist(res);}
+ private async reset(){this.engine.reset();this.history=[];this.historyIndex=-1;this.input='';this.cursor=0;this.currentFile='main.c';await StorageService.clearWorkspace();this.switchFileTab('main.c');this.simTerm.clear();this.simTerm.writeln('\x1b[33m[Virtual Environment Reset Complete]\x1b[0m\r\n');this.refreshPrompt();}
+ private bindEvents(){document.getElementById('tab-main-c')?.addEventListener('click',()=>this.switchFileTab('main.c'));document.getElementById('tab-main-java')?.addEventListener('click',()=>this.switchFileTab('Main.java'));document.getElementById('btn-save-fs')?.addEventListener('click',()=>void this.saveCurrentEditorToFS());document.getElementById('btn-run-tests')?.addEventListener('click',()=>void this.runAutomatedGrading());document.getElementById('btn-reset')?.addEventListener('click',()=>void this.reset());window.addEventListener('keydown',e=>{if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='s'){e.preventDefault();void this.saveCurrentEditorToFS();}});window.addEventListener('resize',()=>{this.editor?.layout();try{this.simFitAddon?.fit();}catch{}});}
 }
-
-window.addEventListener('DOMContentLoaded', () => {
-  new LinuxLabApp();
-});
+window.addEventListener('DOMContentLoaded',()=>new LinuxLabApp());
